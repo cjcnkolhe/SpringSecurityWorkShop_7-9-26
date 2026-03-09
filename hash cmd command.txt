@@ -1,0 +1,22 @@
+CMD :: certutil -hashfile suraj SHA256
+
+Example output:
+SHA256 hash of file file.zip:
+3f2c1b7d6c8f4e9a9e2a8b5e2c7c6e3b9a8f4a2d7f1c3e6b5a9c8e7d6f5a4b3
+CertUtil: -hashfile command completed successfully.
+
+
+Powershell :: Get-FileHash "C:\path\to\your\file.zip" -Algorithm SHA256
+
+Output:
+Algorithm : SHA256
+Hash      : 3F2C1B7D6C8F4E9A9E2A8B5E2C7C6E3B9A8F4A2D7F1C3E6B5A9C8E7D6F5A4B3
+Path      : C:\path\to\your\file.zip
+
+
+to run keycloak, go to bin folder and run below command from windows powershell
+
+.\kc.bat start-dev --http-port=6060
+
+then open browser and hit localhost:6060
+

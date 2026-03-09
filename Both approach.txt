@@ -1,0 +1,170 @@
+Return granted authority from converter class
+
+
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class KeycloakRoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
+
+    private final String clientId;
+
+    public KeycloakRoleConverter(String clientId) {
+        this.clientId = clientId;
+    }
+
+    @Override
+    public Collection<GrantedAuthority> convert(Jwt source) {
+        Set<GrantedAuthority> authorities = new HashSet<>();
+
+        // 1. Realm roles
+        Map<String, Object> realmAccess = source.getClaimAsMap("realm_access");
+        if (realmAccess != null && realmAccess.containsKey("roles")) {
+            List<String> realmRoles = (List<String>) realmAccess.get("roles");
+            realmRoles.forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
+        }
+
+        // 2. Client roles
+        Map<String, Object> resourceAccess = source.getClaimAsMap("resource_access");
+        if (resourceAccess != null && resourceAccess.containsKey(clientId)) {
+            Map<String, Object> client = (Map<String, Object>) resourceAccess.get(clientId);
+            if (client.containsKey("roles")) {
+                List<String> clientRoles = (List<String>) client.get("roles");
+                clientRoles.forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
+            }
+        }
+
+        return authorities;
+    }
+}
+
+////////////////////
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.Customizer;
+
+@Configuration
+public class SecurityConfig {
+
+    private static final String CLIENT_ID = "my-client"; // Replace with your Keycloak client ID
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // Create the JwtAuthenticationConverter and set the KeycloakRoleConverter
+
+        JwtAuthenticationConverter jwtAuthConverter = new JwtAuthenticationConverter();
+        jwtAuthConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter(CLIENT_ID));
+
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/public/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/user/**").hasRole("USER")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
+            );
+
+        return http.build();
+    }
+}
+
+####################################################################33
+
+returning authentication obj directly from role converter
+
+
+
+package com.eazybytes.config;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class KeycloakAuthenticationConverter extends JwtAuthenticationConverter {
+
+    private final String clientId;
+
+    public KeycloakAuthenticationConverter(String clientId) {
+        this.clientId = clientId;
+    }
+
+    @Override
+    public Authentication convert(Jwt jwt) {
+        // Extract roles
+        Set<GrantedAuthority> authorities = new HashSet<>();
+
+        // Realm roles
+        Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+        if (realmAccess != null && realmAccess.containsKey("roles")) {
+            List<String> realmRoles = (List<String>) realmAccess.get("roles");
+            realmRoles.forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
+        }
+
+        // Client roles
+        Map<String, Object> resourceAccess = jwt.getClaimAsMap("resource_access");
+        if (resourceAccess != null && resourceAccess.containsKey(clientId)) {
+            Map<String, Object> client = (Map<String, Object>) resourceAccess.get(clientId);
+            if (client.containsKey("roles")) {
+                List<String> clientRoles = (List<String>) client.get("roles");
+                clientRoles.forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
+            }
+        }
+
+        // Create JwtAuthenticationToken (extends AbstractAuthenticationToken)
+        return new JwtAuthenticationToken(jwt, authorities, jwt.getClaimAsString("preferred_username"));
+    }
+}
+
+/////////////////
+
+package com.eazybytes.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.Customizer;
+
+@Configuration
+public class SecurityConfig {
+
+    private static final String CLIENT_ID = "my-client"; // Replace with your Keycloak client ID
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        // Use the custom converter that returns Authentication directly
+
+        KeycloakAuthenticationConverter keycloakConverter = new KeycloakAuthenticationConverter(CLIENT_ID);
+
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/public/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/user/**").hasRole("USER")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(keycloakConverter))
+            );
+
+        return http.build();
+    }
+}
